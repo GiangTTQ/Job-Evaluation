@@ -1,247 +1,214 @@
-import React, { useState, useCallback, useRef } from 'react';
-import mammoth from 'mammoth';
 
-interface JdInputProps {
-  jobTitle: string;
-  setJobTitle: (title: string) => void;
-  setJdText: (text: string) => void;
-  onEvaluate: () => void;
-  isLoading: boolean;
-  error: string | null;
-  setError: (error: string | null) => void;
-}
-
-const formatBytes = (bytes: number, decimals = 2) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
-
-const readFileContent = async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            try {
-                if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-                    const arrayBuffer = event.target?.result;
-                    if (arrayBuffer instanceof ArrayBuffer) {
-                        const result = await mammoth.extractRawText({ arrayBuffer });
-                        resolve(result.value);
-                    } else {
-                        reject(new Error('Failed to read ArrayBuffer from .docx file.'));
-                    }
-                } else if (file.type === 'text/plain') {
-                    resolve(event.target?.result as string);
-                } else {
-                    reject(new Error(`Unsupported file type: ${file.name}. Please upload a .docx or .txt file.`));
-                }
-            } catch (error) {
-                const message = error instanceof Error ? error.message : "Unknown error during file processing";
-                reject(new Error(`Error processing file: ${message}`));
-            }
-        };
-        reader.onerror = (error) => reject(error);
-
-        if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-            reader.readAsArrayBuffer(file);
-        } else if (file.type === 'text/plain') {
-            reader.readAsText(file);
-        } else {
-             reject(new Error(`Unsupported file type: ${file.name}. Please upload a .docx or .txt file.`));
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JD Evaluation AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            font-family: 'Montserrat', sans-serif;
+            background-color: #111827;
+            color: #d1d5db;
         }
-    });
-};
-
-const JdInput: React.FC<JdInputProps> = ({ jobTitle, setJobTitle, setJdText, onEvaluate, isLoading, error, setError }) => {
-  const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isReadingFile, setIsReadingFile] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [jdText, setInternalJdText] = useState<string>('');
-
-  const handleFile = useCallback(async (selectedFile: File | null) => {
-    if (!selectedFile) return;
-
-    if (selectedFile.size > 200 * 1024 * 1024) { // 200MB limit
-        setError("File is too large. Limit is 200MB.");
-        return;
-    }
-    
-    setIsReadingFile(true);
-    setError(null);
-    try {
-        const text = await readFileContent(selectedFile);
-        setJdText(text);
-        setInternalJdText(text);
-        setFile(selectedFile);
-        if (!jobTitle) {
-            setJobTitle(selectedFile.name.replace(/\.[^/.]+$/, ""));
+        .table-cell {
+            padding: 1rem;
+            vertical-align: top;
+            font-size: 0.875rem;
+            line-height: 1.25rem;
         }
-    } catch (e: any) {
-        setError(e.message);
-        setFile(null);
-        setJdText('');
-        setInternalJdText('');
-    } finally {
-        setIsReadingFile(false);
-    }
-  }, [setJdText, setJobTitle, jobTitle, setError]);
-  
-  const handleRemoveFile = () => {
-    setFile(null);
-    setJdText('');
-    setInternalJdText('');
-    if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-    }
-  }
+    </style>
+</head>
+<body class="bg-[#111827] text-gray-300">
+    <div id="root">
+        <div class="min-h-screen bg-[#111827] flex flex-col">
+            <main class="flex-grow container mx-auto p-4 sm:p-6 lg:p-8 flex justify-center">
+                <div class="w-full max-w-4xl space-y-8">
+                    <!-- JdInput Section -->
+                    <div class="space-y-8">
+                        <div class="text-center">
+                            <h1 class="text-3xl font-extrabold text-gray-100 tracking-tight flex items-center justify-center">
+                                <span role="img" aria-label="clipboard" class="text-4xl mr-3">📋</span>
+                                Đánh giá mô tả công việc theo 12 yếu tố PwC
+                            </h1>
+                            <p class="text-gray-400 mt-2 max-w-2xl mx-auto">
+                                Hãy tải lên file mô tả công việc để được hệ thống đánh giá tự động.
+                            </p>
+                        </div>
 
-  const onDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-  const onDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  };
-  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFile(e.dataTransfer.files[0]);
-      e.dataTransfer.clearData();
-    }
-  };
-  const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-        handleFile(e.target.files[0]);
-    }
-  };
-  
-  const triggerFileSelect = () => fileInputRef.current?.click();
+                        <div class="max-w-xl mx-auto space-y-6">
+                            <div>
+                                <label for="job-title" class="flex items-center gap-2 text-md font-bold text-gray-300 mb-2">
+                                    <span class="text-blue-300 font-mono text-sm bg-blue-900/50 px-2 py-1 rounded">abc</span>
+                                    Nhập tên vị trí công việc
+                                </label>
+                                <input type="text" id="job-title" value="Deputy Sorting Centers Manager" placeholder="e.g., Deputy Sorting Centers Manager" class="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition duration-150 ease-in-out" readonly>
+                            </div>
 
-  const isButtonDisabled = isLoading || isReadingFile || !jdText.trim() || !jobTitle.trim();
-
-  return (
-    <div className="space-y-8">
-      <div className="text-center">
-        <h1 className="text-3xl font-extrabold text-gray-100 tracking-tight flex items-center justify-center">
-            <span role="img" aria-label="clipboard" className="text-4xl mr-3">📋</span>
-            Đánh giá mô tả công việc theo 12 yếu tố PwC
-        </h1>
-        <p className="text-gray-400 mt-2 max-w-2xl mx-auto">
-            Hãy tải lên file mô tả công việc để được hệ thống đánh giá tự động.
-        </p>
-      </div>
-
-      <div className="max-w-xl mx-auto space-y-6">
-        <div>
-          <label htmlFor="job-title" className="flex items-center gap-2 text-md font-bold text-gray-300 mb-2">
-            <span className="text-blue-300 font-mono text-sm bg-blue-900/50 px-2 py-1 rounded">abc</span>
-            Nhập tên vị trí công việc
-          </label>
-          <input
-            type="text"
-            id="job-title"
-            value={jobTitle}
-            onChange={(e) => setJobTitle(e.target.value)}
-            placeholder="e.g., Deputy Sorting Centers Manager"
-            className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition duration-150 ease-in-out"
-            disabled={isLoading || isReadingFile}
-          />
-        </div>
-
-        <div>
-            <label className="flex items-center gap-2 text-md font-bold text-gray-300 mb-2">
-                <span className="text-emerald-300 font-mono text-sm bg-emerald-900/50 px-2 py-1 rounded">docx</span>
-                Tải lên JD (.docx, .txt)
-            </label>
-            <div
-                onDragEnter={onDragEnter}
-                onDragLeave={onDragLeave}
-                onDragOver={onDragOver}
-                onDrop={onDrop}
-                className={`relative flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg cursor-pointer transition-colors duration-200 ${isDragging ? 'border-emerald-500 bg-gray-800/50' : 'border-gray-600 hover:border-gray-500'}`}
-                onClick={triggerFileSelect}
-            >
-                <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={onFileSelect}
-                    accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.txt"
-                    className="hidden"
-                    disabled={isLoading || isReadingFile}
-                />
-                {isReadingFile ? (
-                    <>
-                    <svg className="animate-spin h-8 w-8 text-emerald-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <p className="mt-2 text-gray-400">Đang đọc file...</p>
-                    </>
-                ) : file ? (
-                    <div className="text-center text-gray-300">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="mt-2 font-semibold">{file.name}</p>
-                        <p className="text-sm text-gray-500">{formatBytes(file.size)}</p>
-                        <button onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }} className="mt-3 text-sm text-red-400 hover:text-red-300 font-semibold">
-                            Remove File
-                        </button>
+                            <div>
+                                <label class="flex items-center gap-2 text-md font-bold text-gray-300 mb-2">
+                                    <span class="text-emerald-300 font-mono text-sm bg-emerald-900/50 px-2 py-1 rounded">docx</span>
+                                    Tải lên JD (.docx, .txt)
+                                </label>
+                                <div class="relative flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg border-gray-600">
+                                     <div class="text-center text-gray-300">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-12 w-12 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        <p class="mt-2 font-semibold">JD_Truck_Administration_Executive.docx</p>
+                                        <p class="text-sm text-gray-500">100.1KB</p>
+                                    </div>
+                                </div>
+                            </div>
+                             <div class="flex items-center space-x-3 text-gray-400">
+                                <svg class="animate-spin h-5 w-5 text-emerald-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span>Đang phân tích và đánh giá...</span>
+                            </div>
+                        </div>
                     </div>
-                ) : (
-                    <div className="text-center text-gray-400">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
-                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                        <p className="mt-2">
-                            <span className="font-semibold text-emerald-400">Click to upload</span> or drag and drop
-                        </p>
-                        <p className="text-xs mt-1">DOCX or TXT (max 200MB)</p>
-                    </div>
-                )}
-            </div>
-        </div>
 
-        <div className="flex justify-center">
-            <button
-              onClick={onEvaluate}
-              disabled={isButtonDisabled}
-              className="flex items-center justify-center w-full sm:w-auto px-8 py-4 bg-emerald-600 text-white font-bold rounded-lg shadow-lg hover:bg-emerald-700 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:shadow-none transition-all duration-200 transform hover:scale-105 disabled:scale-100 focus:outline-none focus:ring-4 focus:ring-emerald-500/50"
-            >
-              {isLoading ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Đang đánh giá...
-                </>
-              ) : (
-                <>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                    </svg>
-                    Đánh giá JD
-                </>
-              )}
-            </button>
+                    <!-- EvaluationDisplay Section -->
+                    <div class="bg-[#1f2937] p-6 rounded-2xl shadow-lg border border-gray-700 mt-8 min-h-[400px]">
+                        <div class="flex flex-col h-full">
+                             <div class="space-y-8 text-gray-200">
+                                <div>
+                                    <p class="text-lg font-bold text-emerald-400 flex items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        Kết quả đánh giá theo 12 yếu tố PwC
+                                    </p>
+                                    <p class="mt-2 text-gray-400">
+                                        Dựa trên thông tin bạn cung cấp, tôi đã đánh giá JD theo phương pháp PwC đã được chuẩn hóa. Do JD bạn cung cấp hiện tại quá sơ sài (chỉ có tiêu đề và các mục lớn), tôi sẽ đưa ra đánh giá dựa trên giả định về một số yếu tố thông thường của một JD tiêu chuẩn. Xin lưu ý rằng đánh giá này có thể cần được điều chỉnh khi có thêm thông tin chi tiết.
+                                    </p>
+                                </div>
+                              
+                              <!-- Factors Table -->
+                              <div>
+                                <h3 class="text-xl font-bold text-gray-200 mb-3">Bảng đánh giá JD</h3>
+                                <div class="overflow-x-auto rounded-lg border border-gray-700 bg-[#1f2937]">
+                                  <table class="min-w-full divide-y divide-gray-700">
+                                    <thead class="bg-gray-800/50">
+                                      <tr>
+                                        <th scope="col" class="px-4 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider w-1/5">Yếu tố</th>
+                                        <th scope="col" class="px-4 py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-wider w-[8%]">Mức xếp loại</th>
+                                        <th scope="col" class="px-4 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider w-2/5">Lý do</th>
+                                        <th scope="col" class="px-4 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider w-1/4">Dẫn chứng từ JD</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-700">
+                                      <tr>
+                                        <td class="table-cell font-semibold">1. Trình độ học vấn</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">H1</span></td>
+                                        <td class="table-cell">Giả định vị trí yêu cầu tốt nghiệp đại học để có kiến thức nền tảng.</td>
+                                        <td class="table-cell italic">"YÊU CẦU NĂNG LỰC" (suy đoán)</td>
+                                      </tr>
+                                      <tr class="bg-gray-800/20">
+                                        <td class="table-cell font-semibold">2. Kinh nghiệm</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">E</span></td>
+                                        <td class="table-cell">Giả định cần tối thiểu 1 năm kinh nghiệm để thực hành thành thạo các kỹ năng liên quan đến công việc.</td>
+                                        <td class="table-cell italic">"NHỮNG TRÁCH NHIỆM CÔNG VIỆC CHÍNH" (suy đoán)</td>
+                                      </tr>
+                                      <tr>
+                                        <td class="table-cell font-semibold">3. Mức độ phức tạp của công việc</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">B1</span></td>
+                                        <td class="table-cell">Giả định công việc: ứng dụng kiến thức và kỹ năng đã có, công việc cụ thể, rõ ràng.</td>
+                                        <td class="table-cell italic">"NHỮNG TRÁCH NHIỆM CÔNG VIỆC CHÍNH" (suy đoán)</td>
+                                      </tr>
+                                       <tr class="bg-gray-800/20">
+                                        <td class="table-cell font-semibold">4. Phạm vi công việc</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">A</span></td>
+                                        <td class="table-cell">Giả định vị trí thực hiện các công việc, nhiệm vụ cụ thể, không cần giám sát hay liên hệ chặt chẽ với các bộ phận, cá nhân khác.</td>
+                                        <td class="table-cell italic">"NHỮNG TRÁCH NHIỆM CÔNG VIỆC CHÍNH" (suy đoán)</td>
+                                      </tr>
+                                       <tr>
+                                        <td class="table-cell font-semibold">5. Mức độ giải quyết vấn đề</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">A1</span></td>
+                                        <td class="table-cell">Giả định công việc: đơn giản, lặp đi lặp lại, các vấn đề nhỏ và được giải quyết bằng cách lựa chọn đơn giản giữa những điều đã được học.</td>
+                                        <td class="table-cell italic">"NHỮNG TRÁCH NHIỆM CÔNG VIỆC CHÍNH" (suy đoán)</td>
+                                      </tr>
+                                       <tr class="bg-gray-800/20">
+                                        <td class="table-cell font-semibold">6. Mức độ cần được chỉ dẫn/giám sát</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">A1</span></td>
+                                        <td class="table-cell">Giả định nhiệm vụ đơn giản, công việc cần giám sát chặt chẽ, tất cả các công việc đều được kiểm tra chi tiết.</td>
+                                        <td class="table-cell italic">"NHỮNG TRÁCH NHIỆM CÔNG VIỆC CHÍNH" (suy đoán)</td>
+                                      </tr>
+                                       <tr>
+                                        <td class="table-cell font-semibold">7. Mức độ liên lạc khi thực hiện công việc</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">A1</span></td>
+                                        <td class="table-cell">Giả định liên hệ chỉ cho mục đích xã giao, cần liên hệ ngoài tổ chức ở mức tối thiểu.</td>
+                                        <td class="table-cell italic">"Thông tin chi tiết về cơ cấu báo cáo, phạm vi liên quan đến công việc của vị trí tại phòng ban" (suy đoán)</td>
+                                      </tr>
+                                      <tr class="bg-gray-800/20">
+                                        <td class="table-cell font-semibold">8. Trách nhiệm giám sát & quản lý</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">A</span></td>
+                                        <td class="table-cell">Giả định vị trí này không quản lý nhân viên.</td>
+                                        <td class="table-cell italic">Không có thông tin trong JD để xác định.</td>
+                                      </tr>
+                                       <tr>
+                                        <td class="table-cell font-semibold">9. Ảnh hưởng của các quyết định</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">A1</span></td>
+                                        <td class="table-cell">Giả định các quyết định không gây ra thiệt hại nào hoặc công việc có thể làm lại với nguồn lực không đáng kể.</td>
+                                        <td class="table-cell italic">Không có thông tin trong JD để xác định.</td>
+                                      </tr>
+                                      <tr class="bg-gray-800/20">
+                                        <td class="table-cell font-semibold">10. Quyền hạn</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">A0</span></td>
+                                        <td class="table-cell">Giả định vị trí không được phân quyền phê duyệt về mặt tài chính và không được tuyển nhân viên.</td>
+                                        <td class="table-cell italic">Không có thông tin trong JD để xác định.</td>
+                                      </tr>
+                                      <tr>
+                                        <td class="table-cell font-semibold">11. Môi trường làm việc</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">A1</span></td>
+                                        <td class="table-cell">Giả định công việc thực hiện trong nhà trong điều kiện văn phòng, hầu như không bị ảnh hưởng bởi môi trường bên ngoài.</td>
+                                        <td class="table-cell italic">Không có thông tin trong JD để xác định.</td>
+                                      </tr>
+                                       <tr class="bg-gray-800/20">
+                                        <td class="table-cell font-semibold">12. Yêu cầu thể chất</td>
+                                        <td class="table-cell text-center"><span class="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-emerald-900 text-emerald-300">A1</span></td>
+                                        <td class="table-cell">Giả định công việc thường được thực hiện ở tư thế ngồi, đôi khi được đứng và đi lại tự do.</td>
+                                        <td class="table-cell italic">Không có thông tin trong JD để xác định.</td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                              
+                              <!-- Summary Section -->
+                              <div>
+                                  <h3 class="text-xl font-bold text-gray-200 mb-2">Danh sách các JD có phạm vi tương đồng:</h3>
+                                  <div class="p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+                                      <p class="text-gray-300 whitespace-pre-wrap">Do JD mới có quá ít thông tin, nên việc so sánh phạm vi công việc với các JD đã phân tích trước đó là rất khó khăn. Tuy nhiên, dựa trên những giả định ở trên, có thể thấy JD mới có phạm vi tương đương với vị trí Client Service Specialist (tỷ lệ tương đồng ước tính 60%). Lý do là cả hai đều là các vị trí chuyên viên, thực hiện các công việc cụ thể, không yêu cầu quản lý nhân sự và mức độ ảnh hưởng của các quyết định ở mức thấp.</p>
+                                  </div>
+                              </div>
+
+                              <!-- Overall Summary Section -->
+                               <div>
+                                  <h3 class="text-xl font-bold text-gray-200 mb-2">Nhận xét tổng quan:</h3>
+                                  <div class="p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+                                      <p class="text-gray-300 whitespace-pre-wrap">Dựa trên những thông tin và giả định trên, JD mới mô tả một vị trí chuyên viên cấp thấp, với phạm vi công việc hẹp, độ phức tạp không cao và mức độ ảnh hưởng của các quyết định thấp. Cần bổ sung thêm thông tin chi tiết về các trách nhiệm cụ thể, yêu cầu năng lực, và các yếu tố khác để có thể đánh giá chính xác hơn.</p>
+                                  </div>
+                              </div>
+                        </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+            <footer class="bg-[#111827] py-6 border-t border-gray-800">
+                <div class="container mx-auto text-center text-gray-400 px-4">
+                    <p>&copy; 2024 JD Evaluation AI. All Rights Reserved.</p>
+                    <p class="text-sm mt-1">A tool for internal job evaluation based on the PwC methodology.</p>
+                </div>
+            </footer>
         </div>
-      </div>
     </div>
-  );
-};
-
-export default JdInput;
+</body>
+</html>
